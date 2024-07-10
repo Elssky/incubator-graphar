@@ -69,4 +69,7 @@ venv.bak/
 ### Scala ###
 *.bloop
 *.metals
-*/target/*
+
+### Java ###
+target/
+maven-projects/proto/src/main/java
