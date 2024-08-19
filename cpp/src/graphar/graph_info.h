@@ -177,14 +177,14 @@ class VertexInfo {
    * Construct a VertexInfo object with the given information and property
    * group.
    *
-   * @param label The label of the vertex.
+   * @param vertex_type The vertex_type of the vertex.
    * @param chunk_size The number of vertices in each vertex chunk.
    * @param property_groups The property group vector of the vertex.
    * @param prefix The prefix of the vertex info. If left empty, the default
-   *        prefix will be set to the label of the vertex.
+   *        prefix will be set to the vertex_type of the vertex.
    * @param version The format version of the vertex info.
    */
-  explicit VertexInfo(const std::string& label, IdType chunk_size,
+  explicit VertexInfo(const std::string& vertex_type, IdType chunk_size,
                       const PropertyGroupVector& property_groups,
                       const std::string& prefix = "",
                       std::shared_ptr<const InfoVersion> version = nullptr);
@@ -200,11 +200,11 @@ class VertexInfo {
       std::shared_ptr<PropertyGroup> property_group) const;
 
   /**
-   * Get the label of the vertex.
+   * Get the vertex_type of the vertex.
    *
-   * @return The label of the vertex.
+   * @return The vertex_type of the vertex.
    */
-  const std::string& GetLabel() const;
+  const std::string& GetVertexType() const;
 
   /**
    * Get the chunk size of the vertex.
@@ -694,6 +694,7 @@ class GraphInfo {
    * @param graph_name The name of the graph.
    * @param vertex_infos The vertex info vector of the graph.
    * @param edge_infos The edge info vector of the graph.
+   * @param labels The vertex labels of the graph.
    * @param prefix The absolute path prefix to store chunk files of the graph.
    *               Defaults to "./".
    * @param version The version of the graph info.
@@ -701,8 +702,8 @@ class GraphInfo {
    */
   explicit GraphInfo(
       const std::string& graph_name, VertexInfoVector vertex_infos,
-      EdgeInfoVector edge_infos, const std::string& prefix = "./",
-      std::shared_ptr<const InfoVersion> version = nullptr,
+      EdgeInfoVector edge_infos, const std::vector<std::string>& labels,
+      const std::string& prefix = "./", std::shared_ptr<const InfoVersion> version = nullptr,
       const std::unordered_map<std::string, std::string>& extra_info = {});
 
   ~GraphInfo();
@@ -752,6 +753,12 @@ class GraphInfo {
    * @return The name of the graph.
    */
   const std::string& GetName() const;
+
+    /**
+   * @brief Get the vertex labels of the graph.
+   * @return The vertex labels of the graph.
+   */
+  const std::vector<std::string>& GetLabels() const;
 
   /**
    * @brief Get the absolute path prefix of the chunk files.

@@ -108,10 +108,10 @@ int main(int argc, char* argv[]) {
   auto group =
       graphar::CreatePropertyGroup(property_vector, graphar::FileType::PARQUET);
   // construct new vertex info
-  std::string vertex_label = "cc_result", vertex_prefix = "result/";
+  std::string vertex_type = "cc_result", vertex_prefix = "result/";
   int chunk_size = 100;
   auto version = graphar::InfoVersion::Parse("gar/v1").value();
-  auto new_info = graphar::CreateVertexInfo(vertex_label, chunk_size, {group},
+  auto new_info = graphar::CreateVertexInfo(vertex_type, chunk_size, {group},
                                             vertex_prefix, version);
   // dump new vertex info
   ASSERT(new_info->IsValidated());

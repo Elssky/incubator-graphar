@@ -186,7 +186,7 @@ TEST_CASE_METHOD(GlobalFixture, "VertexInfo") {
       CreateVertexInfo(label, chunk_size, {pg}, "test_vertex", version);
 
   SECTION("Basics") {
-    REQUIRE(vertex_info->GetLabel() == label);
+    REQUIRE(vertex_info->GetVertexType()== label);
     REQUIRE(vertex_info->GetChunkSize() == chunk_size);
     REQUIRE(vertex_info->GetPrefix() == "test_vertex");
     REQUIRE(vertex_info->version()->ToString() == "gar/v1");
@@ -530,7 +530,7 @@ TEST_CASE_METHOD(GlobalFixture, "GraphInfo") {
                                          FileType::CSV, "adj_list/")},
                      {pg}, "test_edge/", version);
   auto graph_info = CreateGraphInfo(name, {vertex_info}, {edge_info},
-                                    "test_graph/", version, extra_info);
+                                    {}, "test_graph/", version, extra_info);
 
   SECTION("Basics") {
     REQUIRE(graph_info->GetName() == name);
@@ -544,7 +544,7 @@ TEST_CASE_METHOD(GlobalFixture, "GraphInfo") {
 
   SECTION("ExtraInfo") {
     auto graph_info_with_extra_info =
-        CreateGraphInfo(name, {vertex_info}, {edge_info}, "test_graph/",
+        CreateGraphInfo(name, {vertex_info}, {edge_info}, {}, "test_graph/",
                         version, {{"key1", "value1"}, {"key2", "value2"}});
     const auto& extra_info = graph_info_with_extra_info->GetExtraInfo();
     REQUIRE(extra_info.size() == 2);
@@ -556,13 +556,13 @@ TEST_CASE_METHOD(GlobalFixture, "GraphInfo") {
 
   SECTION("VertexInfo") {
     REQUIRE(graph_info->VertexInfoNum() == 1);
-    REQUIRE(graph_info->GetVertexInfoByIndex(0)->GetLabel() == "test_vertex");
+    REQUIRE(graph_info->GetVertexInfoByIndex(0)->GetVertexType() == "test_vertex");
     REQUIRE(graph_info->GetVertexInfoByIndex(1) == nullptr);
-    REQUIRE(graph_info->GetVertexInfo("test_vertex")->GetLabel() ==
+    REQUIRE(graph_info->GetVertexInfo("test_vertex")->GetVertexType() ==
             "test_vertex");
     REQUIRE(graph_info->GetVertexInfo("not_exist") == nullptr);
     REQUIRE(graph_info->GetVertexInfos().size() == 1);
-    REQUIRE(graph_info->GetVertexInfos()[0]->GetLabel() == "test_vertex");
+    REQUIRE(graph_info->GetVertexInfos()[0]->GetVertexType() == "test_vertex");
   }
 
   SECTION("EdgeInfo") {
@@ -582,7 +582,7 @@ TEST_CASE_METHOD(GlobalFixture, "GraphInfo") {
     auto invalid_vertex_info =
         CreateVertexInfo("", 100, {pg}, "test_vertex/", version);
     auto invalid_graph_info0 = CreateGraphInfo(
-        name, {invalid_vertex_info}, {edge_info}, "test_graph/", version);
+        name, {invalid_vertex_info}, {edge_info}, {}, "test_graph/", version);
     REQUIRE(invalid_graph_info0->IsValidated() == false);
     auto invalid_edge_info =
         CreateEdgeInfo("", "knows", "person", 1024, 100, 100, true,
@@ -590,23 +590,23 @@ TEST_CASE_METHOD(GlobalFixture, "GraphInfo") {
                                            FileType::CSV, "adj_list/")},
                        {pg}, "test_edge/", version);
     auto invalid_graph_info1 = CreateGraphInfo(
-        name, {vertex_info}, {invalid_edge_info}, "test_graph/", version);
+        name, {vertex_info}, {invalid_edge_info}, {}, "test_graph/", version);
     REQUIRE(invalid_graph_info1->IsValidated() == false);
-    GraphInfo invalid_graph_info2("", {vertex_info}, {edge_info}, "test_graph/",
+    GraphInfo invalid_graph_info2("", {vertex_info}, {edge_info}, {}, "test_graph/",
                                   version);
     REQUIRE(invalid_graph_info2.IsValidated() == false);
-    GraphInfo invalid_graph_info3(name, {vertex_info}, {edge_info}, "",
+    GraphInfo invalid_graph_info3(name, {vertex_info}, {edge_info}, {}, "",
                                   version);
     REQUIRE(invalid_graph_info3.IsValidated() == false);
     // check if prefix empty, graph_info with empty prefix is invalid
     auto graph_info_with_empty_prefix =
-        CreateGraphInfo(name, {vertex_info}, {edge_info}, "", version);
+        CreateGraphInfo(name, {vertex_info}, {edge_info}, {}, "", version);
     REQUIRE(graph_info_with_empty_prefix->IsValidated() == false);
   }
 
   SECTION("CreateGraphInfo") {
     auto graph_info_empty_name =
-        CreateGraphInfo("", {vertex_info}, {edge_info}, "test_graph/");
+       CreateGraphInfo(name, {vertex_info}, {edge_info}, {}, "test_graph/");
     REQUIRE(graph_info_empty_name == nullptr);
   }
 
@@ -626,7 +626,7 @@ vertices:
 )";
     REQUIRE(dump_result.value() == expected);
     auto graph_info_empty_version =
-        CreateGraphInfo(name, {vertex_info}, {edge_info}, "test_graph/");
+        CreateGraphInfo(name, {vertex_info}, {edge_info}, {}, "test_graph/");
     REQUIRE(graph_info_empty_version->Dump().status().ok());
   }
 
@@ -644,13 +644,13 @@ vertices:
     REQUIRE(maybe_extend_info.status().ok());
     auto extend_info = maybe_extend_info.value();
     REQUIRE(extend_info->VertexInfoNum() == 2);
-    REQUIRE(extend_info->GetVertexInfoByIndex(1)->GetLabel() == "test_vertex2");
+    REQUIRE(extend_info->GetVertexInfoByIndex(1)->GetVertexType() == "test_vertex2");
     REQUIRE(extend_info->GetVertexInfoByIndex(2) == nullptr);
-    REQUIRE(extend_info->GetVertexInfo("test_vertex2")->GetLabel() ==
+    REQUIRE(extend_info->GetVertexInfo("test_vertex2")->GetVertexType() ==
             "test_vertex2");
     REQUIRE(extend_info->GetVertexInfo("not_exist") == nullptr);
     REQUIRE(extend_info->GetVertexInfos().size() == 2);
-    REQUIRE(extend_info->GetVertexInfos()[1]->GetLabel() == "test_vertex2");
+    REQUIRE(extend_info->GetVertexInfos()[1]->GetVertexType() == "test_vertex2");
     auto extend_info2 = extend_info->AddVertex(vertex_info2);
     REQUIRE(!extend_info2.status().ok());
   }
@@ -744,7 +744,7 @@ extra_info:
     auto maybe_vertex_info = VertexInfo::Load(vertex_info_yaml);
     REQUIRE(!maybe_vertex_info.has_error());
     auto vertex_info = maybe_vertex_info.value();
-    REQUIRE(vertex_info->GetLabel() == "person");
+    REQUIRE(vertex_info->GetVertexType()== "person");
     REQUIRE(vertex_info->GetChunkSize() == 100);
     REQUIRE(vertex_info->GetPrefix() == "vertex/person/");
     REQUIRE(vertex_info->version()->ToString() == "gar/v1");

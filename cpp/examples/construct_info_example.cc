@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
   auto version = graphar::InfoVersion::Parse("gar/v1").value();
 
   // meta info
-  std::string vertex_label = "person", vertex_prefix = "vertex/person/";
+  std::string vertex_type = "person", vertex_prefix = "vertex/person/";
   int chunk_size = 100;
 
   // construct properties and property groups
@@ -44,10 +44,10 @@ int main(int argc, char* argv[]) {
 
   // create vertex info
   auto vertex_info = graphar::CreateVertexInfo(
-      vertex_label, chunk_size, {group1}, vertex_prefix, version);
+      vertex_type, chunk_size, {group1}, vertex_prefix, version);
 
   ASSERT(vertex_info != nullptr);
-  ASSERT(vertex_info->GetLabel() == vertex_label);
+  ASSERT(vertex_info->GetVertexType()== vertex_type);
   ASSERT(vertex_info->GetChunkSize() == chunk_size);
   ASSERT(vertex_info->GetPropertyGroups().size() == 1);
   ASSERT(vertex_info->HasProperty("id"));
@@ -149,13 +149,13 @@ int main(int argc, char* argv[]) {
   std::string name = "graph", prefix = "file:///tmp/";
 
   // create graph info
-  auto graph_info = graphar::CreateGraphInfo(name, {vertex_info}, {edge_info},
+  auto graph_info = graphar::CreateGraphInfo(name, {vertex_info}, {edge_info}, {}, 
                                              prefix, version);
   ASSERT(graph_info->GetName() == name);
   ASSERT(graph_info->GetPrefix() == prefix);
   ASSERT(graph_info->GetVertexInfos().size() == 1);
-  ASSERT(graph_info->GetVertexInfo(vertex_label) != nullptr);
-  auto vertex_info_from_graph = graph_info->GetVertexInfo(vertex_label);
+  ASSERT(graph_info->GetVertexInfo(vertex_type) != nullptr);
+  auto vertex_info_from_graph = graph_info->GetVertexInfo(vertex_type);
   ASSERT(vertex_info_from_graph != nullptr);
   ASSERT(vertex_info_from_graph->HasPropertyGroup(group1));
   ASSERT(vertex_info_from_graph->HasPropertyGroup(group2));

@@ -53,7 +53,7 @@ Status VertexChunkInfoWriter::validate(
   // weak & strong validate
   if (!vertex_info_->HasPropertyGroup(property_group)) {
     return Status::KeyError("The property group", " does not exist in ",
-                            vertex_info_->GetLabel(), " vertex info.");
+                            vertex_info_->GetVertexType(), " vertex info.");
   }
   if (chunk_index < 0) {
     return Status::IndexError("Negative chunk index ", chunk_index, ".");

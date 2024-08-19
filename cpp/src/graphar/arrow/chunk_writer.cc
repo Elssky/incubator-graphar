@@ -142,7 +142,7 @@ Status VertexPropertyWriter::validate(
   // weak & strong validate
   if (!vertex_info_->HasPropertyGroup(property_group)) {
     return Status::KeyError("The property group", " does not exist in ",
-                            vertex_info_->GetLabel(), " vertex info.");
+                            vertex_info_->GetVertexType(), " vertex info.");
   }
   if (chunk_index < 0) {
     return Status::IndexError("Negative chunk index ", chunk_index, ".");
@@ -227,7 +227,7 @@ Status VertexPropertyWriter::WriteChunk(
     if (indice == -1) {
       return Status::Invalid("Column named ", property.name,
                              " of property group ", property_group,
-                             " of vertex ", vertex_info_->GetLabel(),
+                             " of vertex ", vertex_info_->GetVertexType(),
                              " does not exist in the input table.");
     }
     indices.push_back(indice);
