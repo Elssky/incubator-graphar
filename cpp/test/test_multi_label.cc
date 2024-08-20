@@ -182,17 +182,28 @@ TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
   std::ifstream fp(test_data_dir + "/openstreet/openstreet_no_label.csv");
   std::string line;
   getline(fp, line);
+  // erase BOM
+  if (!line.empty() && (unsigned char)line[0] == 0xEF && 
+                         (unsigned char)line[1] == 0xBB && 
+                         (unsigned char)line[2] == 0xBF) {
+        line.erase(0, 3); // 
+    }
   int m = 3;
   std::vector<std::string> names;
-  // std::istringstream readstr(line);
-  // for (int i = 0; i < m; i++) {
-  //   std::string name;
-  //   getline(readstr, name, ',');
-  //   names.push_back(name);
-  // }
-  names.push_back("id");
-  names.push_back("lon");
-  names.push_back("lat");
+  std::istringstream readstr(line);
+  for (int i = 0; i < m; i++) {
+    std::string name;
+    getline(readstr, name, ',');
+    names.push_back(name);
+    std::cout << "Name: '" << name << "', length: " << name.length() << std::endl;
+    for (int i = 0; i < name.length(); ++i) {
+    std::cout << "Char: '" << name[i] << "', ASCII: " << static_cast<int>(name[i]) << std::endl;
+    }
+  }
+  
+  // names.push_back("id");
+  // names.push_back("lon");
+  // names.push_back("lat");
 
   int lines = 0;
   while (getline(fp, line)) {
