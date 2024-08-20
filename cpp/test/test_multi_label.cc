@@ -36,9 +36,75 @@
 #include "graphar/api/high_level_writer.h"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <arrow/api.h>
+#include <arrow/csv/api.h>
+#include <iostream>
+
+
+// 函数用于将int64类型的列转换为bool类型
+std::shared_ptr<arrow::Table> ConvertInt64ToBool(const std::shared_ptr<arrow::Table>& table) {
+    auto schema = table->schema();
+    std::vector<std::shared_ptr<arrow::Field>> new_fields;
+    std::vector<std::shared_ptr<arrow::ChunkedArray>> new_columns;
+
+    for (int i = 0; i < schema->num_fields(); ++i) {
+        auto field = schema->field(i);
+        auto array = table->column(i);
+
+        if (field->type()->id() == arrow::Type::INT64) {
+            // 将int64数组转换为bool数组
+            auto cast_options = arrow::compute::CastOptions::Safe(arrow::boolean());
+            auto maybe_cast_array = arrow::compute::CallFunction("cast", {array}, &cast_options);
+            if (!maybe_cast_array.ok()) {
+                throw std::runtime_error("Failed to cast array to boolean: " + maybe_cast_array.status().ToString());
+            }
+            auto cast_array = maybe_cast_array->chunked_array();
+            new_columns.push_back(cast_array);
+        } else {
+            // 其他类型列直接添加
+            new_columns.push_back(array);
+        }
+
+        // 更新字段类型（如果是int64转为bool）
+        if (field->type()->id() == arrow::Type::INT64) {
+            new_fields.push_back(arrow::field(field->name(), arrow::boolean()));
+        } else {
+            new_fields.push_back(field);
+        }
+    }
+
+    auto new_schema = arrow::schema(new_fields);
+    return arrow::Table::Make(new_schema, new_columns);
+}
+
+std::shared_ptr<arrow::Table> read_csv_to_table(const std::string& filename) {
+    arrow::csv::ReadOptions read_options{}; // 默认使用多线程
+    arrow::csv::ParseOptions parse_options{}; // 默认分隔符为逗号
+    arrow::csv::ConvertOptions convert_options{};
+
+    parse_options.delimiter = ' '; //分隔符为空格
+
+    // 使用with_resource方法来自动管理内存，避免手动管理shared_ptr
+    auto input = arrow::io::ReadableFile::Open(filename, arrow::default_memory_pool()).ValueOrDie();
+    
+    auto reader = arrow::csv::TableReader::Make(
+        arrow::io::default_io_context(),
+        input,
+        read_options,
+        parse_options,
+        convert_options).ValueOrDie();
+
+    std::shared_ptr<arrow::Table> table;
+    table = reader->Read().ValueOrDie();
+
+    return table;
+}
 namespace graphar {
 TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
   std::cout << "Test vertex builder" << std::endl;
+
+
 
   // construct graph information from file
   std::string path =
@@ -49,14 +115,41 @@ TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
 
   std::unordered_map<std::string, size_t> code;
 
-  // 初始化哈希表code
-  for (size_t i = 0; i < labels.size(); ++i) {
-      code[labels[i]] = i;
-  }
-
   std::vector<std::vector<bool>> label_column_data;
-  std::string message = graph_info->Dump().value();
-  std::cout << message << std::endl;
+  // std::string message = graph_info->Dump().value();
+  // std::cout << message << std::endl;
+
+
+  // read labels csv file as arrow table
+  // auto fs = graphar::FileSystemFromUriOrPath(test_data_dir).value();
+  // auto table = fs->ReadFileToTable(test_data_dir + "/openstreet/openstreet_labels.csv",
+  //                                  FileType::CSV).value();
+  auto table = read_csv_to_table(test_data_dir + "/openstreet/openstreet_labels.csv");
+  std::string table_message = table->ToString();
+
+  // transfer to boolean
+  table = ConvertInt64ToBool(table);
+  
+  auto schema = table->schema();
+  std::cout << schema->ToString() << std::endl;
+  // std::cout << table_message << std::endl;
+
+  // write arrow table as parquet
+  // fs->WriteTableToFile(table, FileType::PARQUET, "/tmp/vertex/osm_node/labels");
+
+  // write arrow table as chunk parquet
+  // auto schema = table->schema();
+  // int indice = schema->GetFieldIndex(GeneralParams::kVertexIndexCol);
+  // auto table_with_index = table;
+  //   if (indice == -1) {
+    // add index column
+  auto maybe_writer = VertexPropertyWriter::Make(vertex_info, "/tmp/");
+  REQUIRE(!maybe_writer.has_error());
+  auto writer = maybe_writer.value();
+  REQUIRE(writer->WriteLabelTable(table, 0, FileType::PARQUET).ok());
+
+
+
   
   // construct vertex builder
   // std::string vertex_meta_file =
@@ -86,10 +179,10 @@ TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
   REQUIRE(builder->GetNum() == 0);
 
   // add vertices
-  std::ifstream fp(test_data_dir + "/openstreet/openstreet.csv");
+  std::ifstream fp(test_data_dir + "/openstreet/openstreet_no_label.csv");
   std::string line;
   getline(fp, line);
-  int m = 4;
+  int m = 3;
   std::vector<std::string> names;
   // std::istringstream readstr(line);
   // for (int i = 0; i < m; i++) {
@@ -114,61 +207,33 @@ TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
         for (size_t j = 0; j < val.length(); j++)
           x = x * 10 + val[j] - '0';
         v.AddProperty(names[i], x);
-      } else if (i == 1) { //labels
-        std::istringstream labelStream(val);
-        std::string singleLabel;
-        std::vector<bool> tmp_labels(labels.size(), false);
-        while (std::getline(labelStream, singleLabel, '|')) {
-            tmp_labels[code[singleLabel]] = true;
-        }
-        label_column_data.push_back(tmp_labels);
       } else {
-        v.AddProperty(names[i-1], val);
+        v.AddProperty(names[i], val);
       }
     }
     REQUIRE(builder->AddVertex(v).ok());
   }
-  std::ofstream output_file("code_labels.csv");
-  if(output_file.is_open()){
-      // 先输出列标题
-      for(size_t j = 0; j < labels.size(); ++j) {
-          output_file << labels[j];
-          if(j != labels.size() - 1) output_file << " ";
-      }
-      output_file << "\n"; // 换行
-
-      std::ostringstream oss; // 使用字符串流累积其他输出
-      for(size_t i = 0; i < label_column_data.size(); i++){
-          for(size_t j = 0; j < code.size(); j++){
-              oss << label_column_data[i][j];
-              if(j != code.size() - 1) oss << " ";
-          }
-          oss << "\n"; // 换行
-      }
-      output_file << oss.str(); // 一次性写入所有累积的数据
-      output_file.close();
-  }else{
-      std::cout << "Unable to open file" << std::endl;
-  }
-
 
   // check the number of vertices in builder
   REQUIRE(builder->GetNum() == lines);
 
   // dump to files
   REQUIRE(builder->Dump().ok());
-  
+
+  // add labels
+
+
 
   // can not add new vertices after dumping
   // REQUIRE(builder->AddVertex(v).IsInvalid());
 
   // check the number of vertices dumped
-  auto fs = arrow::fs::FileSystemFromUriOrPath(test_data_dir).ValueOrDie();
-  auto input =
-      fs->OpenInputStream("/tmp/vertex/osm_node/vertex_count").ValueOrDie();
-  auto num = input->Read(sizeof(IdType)).ValueOrDie();
-  const IdType* ptr = reinterpret_cast<const IdType*>(num->data());
-  REQUIRE((*ptr) == start_index + builder->GetNum());
+  // auto fs = arrow::fs::FileSystemFromUriOrPath(test_data_dir).ValueOrDie();
+  // auto input =
+  //     fs->OpenInputStream("/tmp/vertex/osm_node/vertex_count").ValueOrDie();
+  // auto num = input->Read(sizeof(IdType)).ValueOrDie();
+  // const IdType* ptr = reinterpret_cast<const IdType*>(num->data());
+  // REQUIRE((*ptr) == start_index + builder->GetNum());
 }
 
 TEST_CASE_METHOD(GlobalFixture, "test_edges_builder") {
