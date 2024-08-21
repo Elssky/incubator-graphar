@@ -233,7 +233,7 @@ Status FileSystem::WriteTableToFile(const std::shared_ptr<arrow::Table>& table,
     auto schema = table->schema();
     auto column_num = schema->num_fields();
     parquet::WriterProperties::Builder builder;
-    builder.compression(arrow::Compression::type::ZSTD);  // enable compression
+    // builder.compression(arrow::Compression::type::ZSTD);  // enable compression
     for (int i = 0; i < column_num; ++i) {
       builder.encoding(schema->field(i)->name(), parquet::Encoding::RLE);
     }

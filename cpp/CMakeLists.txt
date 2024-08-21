@@ -395,6 +395,7 @@ if (BUILD_TESTS)
     add_test(test_arrow_chunk_reader SRCS test/test_arrow_chunk_reader.cc)
     add_test(test_graph SRCS test/test_graph.cc)
     add_test(test_multi_label SRCS test/test_multi_label.cc)
+    add_test(test_label_reader SRCS test/test_label_reader.cc)
 
     # enable_testing()
 endif()

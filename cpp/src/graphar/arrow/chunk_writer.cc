@@ -260,11 +260,11 @@ Status VertexPropertyWriter::WriteLabelChunk(
   // auto file_type = vertex_info_->GetFileType();
   auto schema = input_table->schema();
   int indice = schema->GetFieldIndex(GeneralParams::kVertexIndexCol);
-  if (indice == -1) {
-    return Status::Invalid("The internal id Column named ",
-                           GeneralParams::kVertexIndexCol,
-                           " does not exist in the input table.");
-  }
+  // if (indice == -1) {
+  //   return Status::Invalid("The internal id Column named ",
+  //                          GeneralParams::kVertexIndexCol,
+  //                          " does not exist in the input table.");
+  // }
   std::vector<int> indices;
   for(int i=0; i<schema->num_fields(); i++){
     indices.push_back(i);
@@ -326,12 +326,12 @@ Status VertexPropertyWriter::WriteLabelTable(
   auto schema = input_table->schema();
   int indice = schema->GetFieldIndex(GeneralParams::kVertexIndexCol);
   auto table_with_index = input_table;
-  if (indice == -1) {
-    // add index column
-    GAR_ASSIGN_OR_RAISE(table_with_index,
-                        addIndexColumn(input_table, start_chunk_index,
-                                       vertex_info_->GetChunkSize()));
-  }
+  // if (indice == -1) {
+  //   // add index column
+  //   GAR_ASSIGN_OR_RAISE(table_with_index,
+  //                       addIndexColumn(input_table, start_chunk_index,
+  //                                      vertex_info_->GetChunkSize()));
+  // }
   IdType chunk_size = vertex_info_->GetChunkSize();
   int64_t length = table_with_index->num_rows();
   IdType chunk_index = start_chunk_index;

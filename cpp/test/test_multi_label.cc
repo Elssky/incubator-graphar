@@ -100,6 +100,7 @@ std::shared_ptr<arrow::Table> read_csv_to_table(const std::string& filename) {
 
     return table;
 }
+
 namespace graphar {
 TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
   std::cout << "Test vertex builder" << std::endl;
@@ -195,15 +196,12 @@ TEST_CASE_METHOD(GlobalFixture, "test_vertices_builder") {
     std::string name;
     getline(readstr, name, ',');
     names.push_back(name);
-    std::cout << "Name: '" << name << "', length: " << name.length() << std::endl;
-    for (int i = 0; i < name.length(); ++i) {
-    std::cout << "Char: '" << name[i] << "', ASCII: " << static_cast<int>(name[i]) << std::endl;
-    }
+    // std::cout << "Name: '" << name << "', length: " << name.length() << std::endl;
+    // for (int i = 0; i < name.length(); ++i) {
+    // std::cout << "Char: '" << name[i] << "', ASCII: " << static_cast<int>(name[i]) << std::endl;
+    // }
   }
   
-  // names.push_back("id");
-  // names.push_back("lon");
-  // names.push_back("lat");
 
   int lines = 0;
   while (getline(fp, line)) {
