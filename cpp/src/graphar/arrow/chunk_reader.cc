@@ -160,7 +160,7 @@ Status VertexPropertyArrowChunkReader::seek(IdType id) {
   if (chunk_index_ >= chunk_num_) {
     return Status::IndexError("Internal vertex id ", id, " is out of range [0,",
                               chunk_num_ * vertex_info_->GetChunkSize(),
-                              ") of vertex ", vertex_info_->GetLabel());
+                              ") of vertex ", vertex_info_->GetVertexType());
   }
   return Status::OK();
 }
@@ -190,7 +190,7 @@ Status VertexPropertyArrowChunkReader::next_chunk() {
   if (++chunk_index_ >= chunk_num_) {
     return Status::IndexError(
         "vertex chunk index ", chunk_index_, " is out-of-bounds for vertex ",
-        vertex_info_->GetLabel(), " chunk num ", chunk_num_);
+        vertex_info_->GetVertexType(), " chunk num ", chunk_num_);
   }
   seek_id_ = chunk_index_ * vertex_info_->GetChunkSize();
   chunk_table_.reset();

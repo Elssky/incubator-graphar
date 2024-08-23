@@ -189,16 +189,16 @@ std::shared_ptr<AdjacentList> CreateAdjacentList(AdjListType type,
 
 class VertexInfo::Impl {
  public:
-  Impl(const std::string& label, IdType chunk_size, const std::string& prefix,
+  Impl(const std::string& vertex_type, IdType chunk_size, const std::string& prefix,
        const PropertyGroupVector& property_groups,
        std::shared_ptr<const InfoVersion> version)
-      : label_(label),
+      : vertex_type_(vertex_type),
         chunk_size_(chunk_size),
         property_groups_(std::move(property_groups)),
         prefix_(prefix),
         version_(std::move(version)) {
     if (prefix_.empty()) {
-      prefix_ = label_ + "/";  // default prefix
+      prefix_ = vertex_type_ + "/";  // default prefix
     }
     for (size_t i = 0; i < property_groups_.size(); i++) {
       const auto& pg = property_groups_[i];
@@ -215,7 +215,7 @@ class VertexInfo::Impl {
   }
 
   bool is_validated() const noexcept {
-    if (label_.empty() || chunk_size_ <= 0 || prefix_.empty()) {
+    if (vertex_type_.empty() || chunk_size_ <= 0 || prefix_.empty()) {
       return false;
     }
     std::unordered_set<std::string> check_property_unique_set;
@@ -238,7 +238,7 @@ class VertexInfo::Impl {
     return true;
   }
 
-  std::string label_;
+  std::string vertex_type_;
   IdType chunk_size_;
   PropertyGroupVector property_groups_;
   std::string prefix_;
@@ -250,15 +250,15 @@ class VertexInfo::Impl {
       property_name_to_type_;
 };
 
-VertexInfo::VertexInfo(const std::string& label, IdType chunk_size,
+VertexInfo::VertexInfo(const std::string& vertex_type, IdType chunk_size,
                        const PropertyGroupVector& property_groups,
                        const std::string& prefix,
                        std::shared_ptr<const InfoVersion> version)
-    : impl_(new Impl(label, chunk_size, prefix, property_groups, version)) {}
+    : impl_(new Impl(vertex_type, chunk_size, prefix, property_groups, version)) {}
 
 VertexInfo::~VertexInfo() = default;
 
-const std::string& VertexInfo::GetLabel() const { return impl_->label_; }
+const std::string& VertexInfo::GetVertexType() const { return impl_->vertex_type_; }
 
 IdType VertexInfo::GetChunkSize() const { return impl_->chunk_size_; }
 
@@ -366,7 +366,7 @@ Result<std::shared_ptr<VertexInfo>> VertexInfo::AddPropertyGroup(
     }
   }
   return std::make_shared<VertexInfo>(
-      impl_->label_, impl_->chunk_size_,
+      impl_->vertex_type_, impl_->chunk_size_,
       AddVectorElement(impl_->property_groups_, property_group), impl_->prefix_,
       impl_->version_);
 }
@@ -374,13 +374,13 @@ Result<std::shared_ptr<VertexInfo>> VertexInfo::AddPropertyGroup(
 bool VertexInfo::IsValidated() const { return impl_->is_validated(); }
 
 std::shared_ptr<VertexInfo> CreateVertexInfo(
-    const std::string& label, IdType chunk_size,
+    const std::string& vertex_type, IdType chunk_size,
     const PropertyGroupVector& property_groups, const std::string& prefix,
     std::shared_ptr<const InfoVersion> version) {
-  if (label.empty() || chunk_size <= 0) {
+  if (vertex_type.empty() || chunk_size <= 0) {
     return nullptr;
   }
-  return std::make_shared<VertexInfo>(label, chunk_size, property_groups,
+  return std::make_shared<VertexInfo>(vertex_type, chunk_size, property_groups,
                                       prefix, version);
 }
 
@@ -389,7 +389,7 @@ Result<std::shared_ptr<VertexInfo>> VertexInfo::Load(
   if (yaml == nullptr) {
     return Status::Invalid("yaml shared pointer is nullptr");
   }
-  std::string label = yaml->operator[]("label").As<std::string>();
+  std::string vertex_type = yaml->operator[]("vertex_type").As<std::string>();
   IdType chunk_size =
       static_cast<IdType>(yaml->operator[]("chunk_size").As<int64_t>());
   std::string prefix;
@@ -430,7 +430,7 @@ Result<std::shared_ptr<VertexInfo>> VertexInfo::Load(
           std::make_shared<PropertyGroup>(property_vec, file_type, pg_prefix));
     }
   }
-  return std::make_shared<VertexInfo>(label, chunk_size, property_groups,
+  return std::make_shared<VertexInfo>(vertex_type, chunk_size, property_groups,
                                       prefix, version);
 }
 
@@ -446,7 +446,7 @@ Result<std::string> VertexInfo::Dump() const noexcept {
   std::string dump_string;
   ::Yaml::Node node;
   try {
-    node["label"] = impl_->label_;
+    node["vertex_type"] = impl_->vertex_type_;
     node["chunk_size"] = std::to_string(impl_->chunk_size_);
     node["prefix"] = impl_->prefix_;
     for (const auto& pg : impl_->property_groups_) {
@@ -1044,7 +1044,15 @@ static Result<std::shared_ptr<GraphInfo>> ConstructGraphInfo(
       edge_infos.push_back(edge_info);
     }
   }
-  return std::make_shared<GraphInfo>(name, vertex_infos, edge_infos, prefix,
+
+  std::vector<std::string> labels;
+  const auto& labels_node = graph_meta->operator[]("labels");
+  if (labels_node.IsSequence()) {
+    for (auto it = labels_node.Begin(); it != labels_node.End(); it++) {
+      labels.push_back((*it).second.As<std::string>());
+    }
+  }
+  return std::make_shared<GraphInfo>(name, vertex_infos, edge_infos, labels, prefix,
                                      version, extra_info);
 }
 
@@ -1053,18 +1061,19 @@ static Result<std::shared_ptr<GraphInfo>> ConstructGraphInfo(
 class GraphInfo::Impl {
  public:
   Impl(const std::string& graph_name, VertexInfoVector vertex_infos,
-       EdgeInfoVector edge_infos, const std::string& prefix,
-       std::shared_ptr<const InfoVersion> version,
+       EdgeInfoVector edge_infos, const std::vector<std::string>& labels, 
+       const std::string& prefix, std::shared_ptr<const InfoVersion> version,
        const std::unordered_map<std::string, std::string>& extra_info)
       : name_(graph_name),
         vertex_infos_(std::move(vertex_infos)),
         edge_infos_(std::move(edge_infos)),
+        labels_(labels),
         prefix_(prefix),
         version_(std::move(version)),
         extra_info_(extra_info) {
     for (size_t i = 0; i < vertex_infos_.size(); i++) {
       if (vertex_infos_[i] != nullptr) {
-        vlabel_to_index_[vertex_infos_[i]->GetLabel()] = i;
+        vlabel_to_index_[vertex_infos_[i]->GetVertexType()] = i;
       }
     }
     for (size_t i = 0; i < edge_infos_.size(); i++) {
@@ -1101,6 +1110,7 @@ class GraphInfo::Impl {
   std::string name_;
   VertexInfoVector vertex_infos_;
   EdgeInfoVector edge_infos_;
+  std::vector<std::string> labels_;
   std::string prefix_;
   std::shared_ptr<const InfoVersion> version_;
   std::unordered_map<std::string, std::string> extra_info_;
@@ -1110,15 +1120,17 @@ class GraphInfo::Impl {
 
 GraphInfo::GraphInfo(
     const std::string& graph_name, VertexInfoVector vertex_infos,
-    EdgeInfoVector edge_infos, const std::string& prefix,
-    std::shared_ptr<const InfoVersion> version,
+    EdgeInfoVector edge_infos, const std::vector<std::string>& labels,
+    const std::string& prefix, std::shared_ptr<const InfoVersion> version,
     const std::unordered_map<std::string, std::string>& extra_info)
-    : impl_(new Impl(graph_name, std::move(vertex_infos), std::move(edge_infos),
-                     prefix, version, extra_info)) {}
+    : impl_(new Impl(graph_name, std::move(vertex_infos), std::move(edge_infos), 
+                     labels, prefix, version, extra_info)) {}
 
 GraphInfo::~GraphInfo() = default;
 
 const std::string& GraphInfo::GetName() const { return impl_->name_; }
+
+const std::vector<std::string>& GraphInfo::GetLabels() const {return impl_->labels_; }
 
 const std::string& GraphInfo::GetPrefix() const { return impl_->prefix_; }
 
@@ -1193,12 +1205,12 @@ Result<std::shared_ptr<GraphInfo>> GraphInfo::AddVertex(
   if (vertex_info == nullptr) {
     return Status::Invalid("vertex info is nullptr");
   }
-  if (GetVertexInfoIndex(vertex_info->GetLabel()) != -1) {
+  if (GetVertexInfoIndex(vertex_info->GetVertexType()) != -1) {
     return Status::Invalid("vertex info already exists");
   }
   return std::make_shared<GraphInfo>(
       impl_->name_, AddVectorElement(impl_->vertex_infos_, vertex_info),
-      impl_->edge_infos_, impl_->prefix_, impl_->version_);
+      impl_->edge_infos_, impl_->labels_, impl_->prefix_, impl_->version_);
 }
 
 Result<std::shared_ptr<GraphInfo>> GraphInfo::AddEdge(
@@ -1212,19 +1224,19 @@ Result<std::shared_ptr<GraphInfo>> GraphInfo::AddEdge(
   }
   return std::make_shared<GraphInfo>(
       impl_->name_, impl_->vertex_infos_,
-      AddVectorElement(impl_->edge_infos_, edge_info), impl_->prefix_,
-      impl_->version_);
+      AddVectorElement(impl_->edge_infos_, edge_info), impl_->labels_, 
+      impl_->prefix_, impl_->version_);
 }
 
 std::shared_ptr<GraphInfo> CreateGraphInfo(
     const std::string& name, const VertexInfoVector& vertex_infos,
-    const EdgeInfoVector& edge_infos, const std::string& prefix,
-    std::shared_ptr<const InfoVersion> version,
+    const EdgeInfoVector& edge_infos, const std::vector<std::string>& labels,
+    const std::string& prefix, std::shared_ptr<const InfoVersion> version,
     const std::unordered_map<std::string, std::string>& extra_info) {
   if (name.empty()) {
     return nullptr;
   }
-  return std::make_shared<GraphInfo>(name, vertex_infos, edge_infos, prefix,
+  return std::make_shared<GraphInfo>(name, vertex_infos, edge_infos, labels, prefix,
                                      version, extra_info);
 }
 
@@ -1268,7 +1280,7 @@ Result<std::string> GraphInfo::Dump() const {
     for (const auto& vertex : GetVertexInfos()) {
       node["vertices"].PushBack();
       node["vertices"][node["vertices"].Size() - 1] =
-          vertex->GetLabel() + ".vertex.yaml";
+          vertex->GetVertexType() + ".vertex.yaml";
     }
     for (const auto& edge : GetEdgeInfos()) {
       node["edges"].PushBack();
@@ -1276,6 +1288,13 @@ Result<std::string> GraphInfo::Dump() const {
           ConcatEdgeTriple(edge->GetSrcLabel(), edge->GetEdgeLabel(),
                            edge->GetDstLabel()) +
           ".edge.yaml";
+    }
+    if (impl_->labels_.size() > 0) {
+      node["labels"];
+      for (const auto& label : impl_->labels_) {
+        node["labels"].PushBack();
+        node["labels"][node["labels"].Size() - 1] = label;
+      }
     }
     if (impl_->version_ != nullptr) {
       node["version"] = impl_->version_->ToString();
