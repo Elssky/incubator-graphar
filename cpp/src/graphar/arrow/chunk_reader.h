@@ -53,6 +53,10 @@ class VertexPropertyArrowChunkReader {
       const std::shared_ptr<PropertyGroup>& property_group,
       const std::string& prefix, const util::FilterOptions& options = {});
 
+  VertexPropertyArrowChunkReader(
+    const std::shared_ptr<VertexInfo>& vertex_info,
+    const std::vector<std::string>& labels,
+    const std::string& prefix, const util::FilterOptions& options = {});
   /**
    * @brief Sets chunk position indicator for reader by internal vertex id.
    *    If internal vertex id is not found, will return Status::IndexError
@@ -67,12 +71,16 @@ class VertexPropertyArrowChunkReader {
    * @brief Return the current arrow chunk table of chunk position indicator.
    */
   Result<std::shared_ptr<arrow::Table>> GetChunk();
-
+ /**
+   * @brief Return the current arrow label chunk table of chunk position indicator.
+   */
+  Result<std::shared_ptr<arrow::Table>> GetLabelChunk(FileType filetype);
   /**
    * @brief Sets chunk position indicator to next chunk.
    *
    *  if current chunk is the last chunk, will return Status::IndexError error.
    */
+
   Status next_chunk();
 
   /**
@@ -108,6 +116,18 @@ class VertexPropertyArrowChunkReader {
       const std::shared_ptr<VertexInfo>& vertex_info,
       const std::shared_ptr<PropertyGroup>& property_group,
       const std::string& prefix, const util::FilterOptions& options = {});
+
+  /**
+   * @brief Create a VertexPropertyArrowChunkReader instance from vertex info for labels.
+   *
+   * @param vertex_info The vertex info.
+   * @param prefix The absolute prefix of the graph.
+   * @param options The filter options, default is empty.
+   */
+  static Result<std::shared_ptr<VertexPropertyArrowChunkReader>> Make(
+      const std::shared_ptr<VertexInfo>& vertex_info, const std::vector<std::string>& labels,
+      const std::string& prefix,
+      const util::FilterOptions& options);
 
   /**
    * @brief Create a VertexPropertyArrowChunkReader instance from graph info and

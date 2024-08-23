@@ -25,6 +25,22 @@
 #include <memory>
 
 
+// for chunkreader
+#include <cstdlib>
+
+#include "arrow/api.h"
+
+#include "./util.h"
+#include "graphar/api/arrow_reader.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+// multi thread speedup
+#include <thread>
+#include <vector>
+#include <future>
+#include <condition_variable>
+
 /// constants related to the test
 // 1. cyber-security-ad-44-nodes.csv - too small
 // row number: 954, label number: 7, test id: 0, 1, AND
@@ -60,12 +76,20 @@
 // 4. ogbn-products.csv, 2449029, 47, {0, 1}, OR
 // 5. ogbn-papers100M.csv, 111059956, 172, {0, 1}, OR
 
+
 const int TEST_ROUNDS = 1;                          // the number of test rounds
 const int TOT_ROWS_NUM = 69165;                         // the number of total vertices
 const int TOT_LABEL_NUM = 10;                         // the number of total labels
 const int TESTED_LABEL_NUM = 2;                       // the number of tested labels
+const int CHUNK_SIZE = 1000;
 int tested_label_ids[TESTED_LABEL_NUM] = {2, 5};      // the ids of tested labels
 const QUERY_TYPE fix_query_type = QUERY_TYPE::COUNT;  // the query type
+
+std::mutex count_mutex; // 用于保护对total_counts的并发访问
+std::mutex mtx;
+std::condition_variable cv;
+int active_threads = 0;
+const int MAX_THREADS = 1; // 设置最大线程数为2
 
 const char PARQUET_FILENAME_RLE[] =
     "parquet_graphar_label_RLE.parquet";  // the RLE filename
@@ -106,6 +130,7 @@ static inline bool IsValid(bool* state, int column_number) {
   // OR case
 //   return false;
 }
+
 
 /// Generate data of label columns for the parquet file (using bool datatype).
 void generate_label_column_data_bool(const int num_rows, const int num_columns);
@@ -201,7 +226,29 @@ void string_test(bool validate = false, bool enable_dictionary = false) {
   std::cout << "----------------------------------------\n";
 }
 
+
+
+void process_chunk(int chunk_idx, const std::string& base_filename,
+                  int TOT_ROWS_NUM, int TOT_LABEL_NUM, int TESTED_LABEL_NUM,
+                  const int* tested_label_ids,  uint64_t* bitmap,
+                  std::vector<int>& total_counts, const std::function<bool(bool*, int)>& IsValid) {
+    std::string new_filename = base_filename + "/chunk" + std::to_string(chunk_idx);
+    std::vector<int> indices;
+    int count = read_parquet_file_and_get_valid_indices(
+        new_filename.c_str(), TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+        IsValid, &indices, bitmap, QUERY_TYPE::COUNT);
+    std::lock_guard<std::mutex> lock(count_mutex);
+    total_counts.push_back(count);
+    std::cout << "Chunk " << chunk_idx << ": Processed " << count << " valid indices." << std::endl;
+     {
+        std::lock_guard<std::mutex> lock(mtx);
+        --active_threads;
+        cv.notify_one(); // 通知等待的线程
+    }
+}
+
 /// The test using bool plain encoding/decoding for GraphAr labels.
+
 void bool_plain_test(bool validate = false,
                      const char* filename = PARQUET_FILENAME_PLAIN) {
   std::cout << "----------------------------------------\n";
@@ -229,10 +276,192 @@ void bool_plain_test(bool validate = false,
     auto run_start = clock();
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < TEST_ROUNDS; i++) {
-      count = read_parquet_file_and_get_valid_indices(
-          filename, TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
-          IsValid, &indices, bitmap, QUERY_TYPE::COUNT);
+    //   int total_count = 0;
+    //   for (int chunk_idx = 0; chunk_idx * CHUNK_SIZE < TOT_ROWS_NUM; ++chunk_idx) {
+    //     std::string new_filename = std::string(filename) + "/chunk" + std::to_string(chunk_idx);
+    //     // std::string new_filename = std::string(filename) +  "parquet_graphar_label_RLE.parquet";
+    //     // 注意：这里需要确保IsValidFunc类型的IsValid已正确定义并可用
+    //     std::vector<int> indices;
+    //     int count = read_parquet_file_and_get_valid_indices(
+    //         new_filename.c_str(), TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+    //         IsValid, &indices, bitmap, QUERY_TYPE::COUNT);
+    //     total_count += count;
+        
+    //     std::cout << "Chunk " << chunk_idx << ": Processed " << count << " valid indices." << std::endl;
+    //     // 这里可以进一步处理indices和count，比如累加计数或处理有效索引
+    // }
+    // std::cout << "Total valid count: " << total_count << std::endl;
+    std::vector<std::thread> threads;
+    std::vector<int> total_counts;
+    
+
+    for (int chunk_idx = 0; chunk_idx * CHUNK_SIZE < TOT_ROWS_NUM; ++chunk_idx) {
+        std::unique_lock<std::mutex> lock(mtx);
+          // 等待直到有线程完成
+        cv.wait(lock, []{ return active_threads < MAX_THREADS; });
+        ++active_threads;
+        threads.emplace_back(process_chunk, chunk_idx, filename,
+                            TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM,
+                            tested_label_ids, bitmap, std::ref(total_counts), std::ref(IsValid));
+        // process_chunk(chunk_idx, filename,
+        //                     TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM,
+        //                     tested_label_ids, bitmap, total_counts, IsValid);
     }
+
+    // 等待所有线程完成
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    // 计算总处理计数
+    int total_count = 0;
+    for (int count : total_counts) {
+        total_count += count;
+    }
+    std::cout << "Total processed valid indices: " << total_count << std::endl;
+
+    auto run_time = 1000.0 * (clock() - run_start) / CLOCKS_PER_SEC;
+    auto end = std::chrono::high_resolution_clock::now();
+    // 计算时间差
+    std::chrono::duration<double> duration = end - start;
+    std::cout << "代码执行时间: " << duration.count() << " 秒" << std::endl;
+    std::cout << "[Performance] The run time for the test (COUNT) is: " << run_time
+              << " ms.\n"
+              << std::endl;
+  }
+  }
+
+  // test getting indices
+  if (fix_query_type == QUERY_TYPE::ADAPTIVE || fix_query_type == QUERY_TYPE::INDEX) {
+    auto run_start = clock();
+    for (int i = 0; i < TEST_ROUNDS; i++) {
+      for (int chunk_idx = 0; chunk_idx * CHUNK_SIZE < TOT_ROWS_NUM; ++chunk_idx) {
+        std::string new_filename = std::string(filename) + "/chunk" + std::to_string(chunk_idx);
+        
+        // 注意：这里需要确保IsValidFunc类型的IsValid已正确定义并可用
+        std::vector<int> indices;
+        int count = read_parquet_file_and_get_valid_indices(
+            new_filename.c_str(), TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+            IsValid, &indices, bitmap, QUERY_TYPE::INDEX);
+        
+        std::cout << "Chunk " << chunk_idx << ": Processed " << count << " valid indices." << std::endl;
+        // 这里可以进一步处理indices和count，比如累加计数或处理有效索引
+    }
+      // count = read_parquet_file_and_get_valid_indices(
+      //     filename, TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+      //     IsValid, &indices, bitmap, QUERY_TYPE::INDEX);
+    }
+   
+    auto run_time = 1000.0 * (clock() - run_start) / CLOCKS_PER_SEC;
+    std::cout << "[Performance] The run time for the test (INDEX) is: " << run_time
+              << " ms.\n"
+              << std::endl;
+  }
+
+  // test getting bitmap
+  if (fix_query_type == QUERY_TYPE::BITMAP) {
+    auto run_start = clock();
+    for (int i = 0; i < TEST_ROUNDS; i++) {
+      for (int chunk_idx = 0; chunk_idx * CHUNK_SIZE < TOT_ROWS_NUM; ++chunk_idx) {
+        std::string new_filename = std::string(filename) + "/chunk" + std::to_string(chunk_idx);
+        
+        // 注意：这里需要确保IsValidFunc类型的IsValid已正确定义并可用
+        std::vector<int> indices;
+        int count = read_parquet_file_and_get_valid_indices(
+            new_filename.c_str(), TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+            IsValid, &indices, bitmap, QUERY_TYPE::BITMAP);
+        
+        std::cout << "Chunk " << chunk_idx << ": Processed " << count << " valid indices." << std::endl;
+        // 这里可以进一步处理indices和count，比如累加计数或处理有效索引
+    }
+    auto run_time = 1000.0 * (clock() - run_start) / CLOCKS_PER_SEC;
+    std::cout << "[Performance] The run time for the test (BITMAP) is: " << run_time
+              << " ms.\n"
+              << std::endl;
+  }
+
+  std::cout << "The valid count is: " << count << std::endl;
+  }
+
+  if (validate) {
+    // print the results
+    std::cout << "The valid indices are:" << std::endl;
+    for (size_t i = 0; i < indices.size(); i++) {
+      std::cout << indices[i] << std::endl;
+      if (!GetBit(bitmap, indices[i])) {
+        std::cout << "[Error] The index " << indices[i] << " is not valid." << std::endl;
+      }
+    }
+  }
+
+  delete[] bitmap;
+  std::cout << "----------------------------------------\n";
+}
+
+/// The test using bool plain encoding/decoding for GraphAr labels with chunk reader.
+
+void bool_plain_test_chunk_reader(bool validate = false,
+                     const char* filename = PARQUET_FILENAME_PLAIN) {
+  std::cout << "----------------------------------------\n";
+  std::cout << "Running baseline bool test with chunk reader";
+//   if (filename == PARQUET_FILENAME_PLAIN) {
+//     std::cout << "(plain)..." << std::endl;
+//     // generate parquet file by ParquetWriter
+//     generate_parquet_file_bool_plain(PARQUET_FILENAME_PLAIN, TOT_ROWS_NUM, TOT_LABEL_NUM,
+//                                      label_column_data, label_names, false);
+//   } else {
+//     std::cout << "(RLE)..." << std::endl;
+//     // generate parquet file by ParquetWriter
+//     generate_parquet_file_bool_RLE(PARQUET_FILENAME_RLE, TOT_ROWS_NUM, TOT_LABEL_NUM,
+//                                    label_column_data, label_names, false);
+//   }
+
+  // allocate memory
+  std::vector<int> indices;
+  uint64_t* bitmap = new uint64_t[TOT_ROWS_NUM / 64 + 1];
+  memset(bitmap, 0, sizeof(uint64_t) * (TOT_ROWS_NUM / 64 + 1));
+  int count;
+
+  // test getting count
+  if (fix_query_type == QUERY_TYPE::COUNT) {
+    auto run_start = clock();
+    auto start = std::chrono::high_resolution_clock::now();
+    std::string test_data_dir = "/workspaces/incubator-graphar/cpp/build/testing";
+    std::string prefix = test_data_dir + "/openstreet/";
+    std::string vertex_info_path = prefix + "parquet/osm_node.vertex.yml";
+    std::cout << "Vertex info path: " << vertex_info_path << std::endl;
+    auto fs = graphar::FileSystemFromUriOrPath(prefix).value();
+    auto yaml_content =
+        fs->ReadFileToValue<std::string>(vertex_info_path).value();
+    std::cout << yaml_content << std::endl;
+    auto maybe_vertex_info = graphar::VertexInfo::Load(yaml_content);
+    std::cout << "maybe_vertex_info: " << maybe_vertex_info.status().message() << std::endl;
+    std::cout << maybe_vertex_info.status().ok() << std::endl;
+    // REQUIRE(maybe_vertex_info.status().ok());
+    auto vertex_info = maybe_vertex_info.value();
+    std::vector<std::string> label_names = {
+        "OSM",
+        "Bounds",
+        "OSMNode",
+        "Intersection",
+        "OSMTags",
+        "PointOfInterest",
+        "Routable",
+        "OSMWay",
+        "OSMWayNode",
+        "OSMRelation"
+    };
+    auto maybe_reader =
+          graphar::VertexPropertyArrowChunkReader::Make(vertex_info, label_names, prefix, {});
+    // for (int i = 0; i < TEST_ROUNDS; i++) {
+    //   // count = read_parquet_file_and_get_valid_indices(
+    //   //     filename, TOT_ROWS_NUM, TOT_LABEL_NUM, TESTED_LABEL_NUM, tested_label_ids,
+    //   //     IsValid, &indices, bitmap, QUERY_TYPE::COUNT);
+    //   REQUIRE(maybe_reader.status().ok());
+    auto reader = maybe_reader.value();
+    //   auto result = reader->GetChunk();
+
+    // }
     auto run_time = 1000.0 * (clock() - run_start) / CLOCKS_PER_SEC;
     auto end = std::chrono::high_resolution_clock::now();
     // 计算时间差
@@ -386,6 +615,11 @@ void read_csv_file_and_generate_label_column_data_bool(const int num_rows,
                                                        const int num_columns);
 
 int main(int argc, char** argv) {
+  unsigned num_cores = std::thread::hardware_concurrency(); // 获取系统核心数
+  std::cout << "System has " << num_cores << " cores.\n";
+
+  // 根据核心数创建线程，这里假设我们不希望超过核心数，可以根据实际情况调整
+  const int THREAD_COUNT = std::min(num_cores, 4u); // 举例，最多创建4个线程
   //label_column_data = new bool*[TOT_ROWS_NUM];
   //for (int i = 0; i < TOT_ROWS_NUM; i++) {
   //  label_column_data[i] = new bool[TOT_LABEL_NUM];
@@ -409,8 +643,10 @@ int main(int argc, char** argv) {
 //   bool_plain_test();
 
   // bool test use RLE but not optimized
-  bool_plain_test(false, "/workspaces/incubator-graphar/cpp/build/testing/openstreet/parquet/vertex/osm_node/labels/chunk0_no_zstd.parquet");
+  bool_plain_test(false, "/workspaces/incubator-graphar/cpp/build/testing/openstreet/parquet/vertex/osm_node/labels/");
 
+  // bool test use RLE but not optimized and read by chunk reader
+  // bool_plain_test_chunk_reader(false, "/workspaces/incubator-graphar/cpp/build/testing/openstreet/parquet/vertex/osm_node/labels/");
   // bool test use RLE and optimized
 //   RLE_test();
 
@@ -498,3 +734,4 @@ void hard_coded_test() {
   std::cout << "The valid count is: " << count << std::endl;
   std::cout << "----------------------------------------\n";
 }
+
