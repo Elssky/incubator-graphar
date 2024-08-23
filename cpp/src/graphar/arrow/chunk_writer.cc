@@ -273,7 +273,7 @@ Status VertexPropertyWriter::WriteLabelChunk(
 
   GAR_RETURN_ON_ARROW_ERROR_AND_ASSIGN(auto in_table,
                                        input_table->SelectColumns(indices));
-  std::string suffix = "vertex/osm_node/labels/chunk" + std::to_string(chunk_index);
+  std::string suffix = vertex_info_->GetPrefix() +"labels/chunk" + std::to_string(chunk_index);
   // GAR_ASSIGN_OR_RAISE(auto suffix,
   //                     vertex_info_->GetFilePath(property_group, chunk_index));
   std::string path = prefix_ + suffix;
