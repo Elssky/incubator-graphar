@@ -177,6 +177,74 @@ macro(install_graphar_target target)
   )
 endmacro()
 
+# ------------------------------------------------------------------------------
+#  clean output data
+# ------------------------------------------------------------------------------
+add_custom_target(clean_data
+    COMMAND ${CMAKE_COMMAND} -E remove_directory /tmp/vertex
+    COMMAND ${CMAKE_COMMAND} -E remove_directory /tmp/edge
+    COMMAND ${CMAKE_COMMAND} -E remove_directory /tmp/ldbc
+)
+
+# ------------------------------------------------------------------------------
+# clean target and data
+# ------------------------------------------------------------------------------
+add_custom_target(clean_all
+    COMMAND ${CMAKE_COMMAND} clean
+    COMMAND ${CMAKE_COMMAND} clean_data
+)
+
+# ------------------------------------------------------------------------------
+# building or find third party library
+# ------------------------------------------------------------------------------
+# check if arrow is installed
+find_package(Arrow QUIET)
+if (NOT ${Arrow_FOUND})
+    message(FATAL_ERROR "apache-arrow is required, please install it and retry")
+endif()
+find_package(ArrowDataset QUIET)
+if (NOT ${ArrowDataset_FOUND})
+    message(FATAL_ERROR "apache-arrow-dataset is required, please install it and retry")
+endif()
+if (${Arrow_VERSION} VERSION_GREATER_EQUAL "12.0.0")
+    # ArrowAcero is available in Arrow 12.0.0 and later
+    find_package(ArrowAcero QUIET)
+    if (NOT ${ArrowAcero_FOUND})
+        message(FATAL_ERROR "apache-arrow-acero is required, please install it and retry")
+    endif()
+endif()
+# Check if ORC is enabled.
+if (NOT ${ARROW_ORC})
+    message(WARNING "apache-arrow is built without ORC extension, ORC related functionalities will be disabled.")
+else()
+    add_definitions(-DARROW_ORC) # Add macro, otherwise inconsistent in build phase on ubuntu.
+endif()
+
+find_package(Parquet QUIET)
+if (NOT ${Parquet_FOUND})
+    message(FATAL_ERROR "parquet is required, please install it and retry")
+endif()
+
+find_package(Protobuf REQUIRED)
+include_directories(${PROTOBUF_INCLUDE_DIRS})
+
+macro(get_target_location var target)
+  if(TARGET ${target})
+    foreach(prop LOCATION LOCATION_NOCONFIG LOCATION_DEBUG LOCATION_RELEASE)
+      get_target_property(${var} ${target} ${prop})
+      if(NOT ("${${var}}" STREQUAL "${var}-NOTFOUND"))
+        break ()
+      endif()
+    endforeach()
+  endif()
+endmacro()
+
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
+include_directories(src)
+
+# ------------------------------------------------------------------------------
+# generate graphar library
+# ------------------------------------------------------------------------------
 macro(build_graphar)
     file(GLOB_RECURSE CORE_SRC_FILES "src/graphar/*.cc" ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/mini-yaml/yaml/*.cpp)
     if(GRAPHAR_BUILD_STATIC)

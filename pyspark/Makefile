@@ -17,6 +17,7 @@
 
 .PHONY: install_test
 install_test:
+		make clean
 		export JAVA_HOME=${JAVA_HOME_11_X64}
 		cd ../maven-projects/spark && mvn --no-transfer-progress clean package -DskipTests -Dspotless.check.skip=true && cd ../../pyspark 
 		export PYSPARK_HADOOP_VERSION=3.3
@@ -24,6 +25,7 @@ install_test:
 
 .PHONY: test
 test:
+		make clean
 		export JAVA_HOME=${JAVA_HOME_11_X64}
 		export SPARK_TESTING=1
 		poetry run pytest --cov
@@ -53,3 +55,7 @@ install_docs:
 .PHONY: docs
 docs:
 		poetry run pdoc -t ./template --output-dir ./docs graphar_pyspark
+
+.PHONY: clean
+clean:
+		rm -rf /tmp/vertex /tmp/edge /tmp/ldbc || true
