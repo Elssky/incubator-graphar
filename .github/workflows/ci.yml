@@ -177,6 +177,12 @@ jobs:
         ctest --output-on-failure
         popd
 
+    - name: Upload libgraphar.a artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ubuntu-libgraphar
+        path: cpp/build-static/libgraphar.a  
+
   macos:
     name: ${{ matrix.architecture }} macOS ${{ matrix.macos-version }} C++
     runs-on: macos-${{ matrix.macos-version }}
@@ -227,3 +233,9 @@ jobs:
         export ASAN_OPTIONS=detect_container_overflow=0
         ctest --output-on-failure
         popd
+
+    - name: Upload libgraphar.a artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: macos-libgraphar
+        path: cpp/build-static/libgraphar.a  
